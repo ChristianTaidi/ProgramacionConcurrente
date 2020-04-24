@@ -22,7 +22,14 @@
      * cabo adelantamientos entre vehículos considerando estas
      * características técnicas y las características del tramo. En este
      * caso el vehículo tendrá que decidir si adelantan a uno o más
-     * contrincantes.
+     * contrincantes. Los adelantamientos involucran una gestión
+     * especial, ya que se pueden dar diversos escenarios como por
+     * ejemplo que el vehículo al que tratas de adelantar te puede
+     * cerrar y quedarías detrás del vehículo al que intentabas
+     * adelantar; que ya hay un vehículo que te está adelantando; que
+     * no hay espacio suficiente delante del vehículo a adelantar, entre
+     * otrassituaciones. La lógica del procedimiento adelantar es una
+     * definición libre en función de vuestra implementación.
      *ToDo  -> Gestión del combustible (0,3 puntos): Cada vez que se supere
      * un tramo se tendrá que recalcular el gasto de combustible y en
      * el caso en el que el vehículo se encuentra en la reserva tendrá
@@ -30,5 +37,64 @@
      * depósito. El acceso a boxes se podrá realizar desde cualquier
      * sitio y momento.
  */
-public class Vehicle {
+public class Vehicle implements Runnable,Comparable{
+
+    private int speed;
+    private int distancePerSecond;
+    private int fuelLevel;
+    private int currentTrack;
+    private int currentTrackDistance;
+    private int lap;
+    private Race race;
+    private int id;
+
+    private static final int SECONDS_PER_ITERATION = 5;
+    public Vehicle(Race race,int id){
+        this.speed = 5;
+        this.distancePerSecond = 2;
+        this.race = race;
+        this.currentTrack = 0;
+        this.currentTrackDistance = 0;
+        this.lap = 0;
+        this.id = id;
+    }
+
+    @Override
+    public void run() {
+
+        //Comprobar si la distancia del tramo actual se ha recorrido
+        int trackLength = race.currentTrack(currentTrack).getLength();
+        if(currentTrackDistance<trackLength){
+            currentTrackDistance+=speed*SECONDS_PER_ITERATION;
+        }
+        //Actualizar el tramo
+        if(currentTrackDistance>=trackLength){
+            System.out.println(Thread.currentThread().getName()+" vehicleId:"+this.id+": accedido al siguiente tramo: "+currentTrack++);
+            //Incrementa la distancia restante con respecto al tramo anterior
+            currentTrackDistance = currentTrackDistance-trackLength;
+        }
+    }
+
+
+    @Override
+    public int compareTo(Object o) {
+        Vehicle vehicle = (Vehicle) o;
+        if(this.lap<vehicle.lap){
+            return -1;
+        }else if(this.currentTrack<vehicle.currentTrack){
+            if(this.lap>vehicle.lap){
+                return 1;
+            }else {
+                return -1;
+            }
+        }else if(this.currentTrackDistance<vehicle.currentTrackDistance){
+            if(this.lap==vehicle.lap&&this.currentTrack==vehicle.currentTrack){
+                return -1;
+            }else{
+                return 1;
+            }
+        }else{
+            return 0;
+        }
+    }
 }

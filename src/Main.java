@@ -21,6 +21,11 @@
 public class Main {
 
     public static void main(String[] args){
+        Race race = new Race();
+        for(int i =0;i<5;i++){
+            race.addVehicle(new Vehicle(race,i));
+        }
+        race.run();
 
     }
 }

@@ -28,4 +28,25 @@ public class RaceTrack {
 
     private int length;
     private int trackType;
+
+    public RaceTrack(){
+        this.length = 10;
+        this.trackType = 0;
+    }
+
+    public int getLength() {
+        return length;
+    }
+
+    public void setLength(int length) {
+        this.length = length;
+    }
+
+    public int getTrackType() {
+        return trackType;
+    }
+
+    public void setTrackType(int trackType) {
+        this.trackType = trackType;
+    }
 }
