@@ -1,3 +1,5 @@
+import java.util.Random;
+
 /**
  * Clase Racetrack (Tramo) encargada de modelar un tramo del circuito
  * donde correrán los coches. Un tramo representa una parte de un circuito
@@ -21,32 +23,41 @@
  */
 public class RaceTrack {
 
-    private static final int STRAIGHT_TRACK = 0;
-    private static final int CURVE_TRACK = 0;
-    private static final int MULTIPLE_CURVE_TRACK = 0;
-    private static final int GRADE_CHANGE_TRACK = 0;
+    String[] trackTypes = {"STRAIGHT_TRACK","GRADE_CHANGE_TRACK","CURVE_TRACK","MULTIPLE_CURVE_TRACK"};
 
     private int length;
     private int trackType;
 
     public RaceTrack(){
-        this.length = 10;
-        this.trackType = 0;
+        this.length = new Random().nextInt(30)+20;
+        this.trackType = new Random().nextInt(4);
     }
 
     public int getLength() {
         return length;
     }
 
+    public int computeDistance(int vehicleAdaptability){
+        return length + (length*(trackType%3))/vehicleAdaptability;
+    }
+
     public void setLength(int length) {
         this.length = length;
     }
 
-    public int getTrackType() {
-        return trackType;
+    public String getTrackType() {
+        return trackTypes[trackType];
     }
 
     public void setTrackType(int trackType) {
         this.trackType = trackType;
+    }
+
+    @Override
+    public String toString() {
+        return "RaceTrack{" +
+                "type="+getTrackType()+
+                "length=" + length +
+                '}';
     }
 }

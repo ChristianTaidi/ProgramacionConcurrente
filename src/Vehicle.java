@@ -1,3 +1,9 @@
+import java.util.Objects;
+import java.util.Random;
+
+import static java.lang.Thread.currentThread;
+import static java.lang.Thread.sleep;
+
 /**
  * Clase Vehicle (Vehículo) encargada de modelar el coche que correrá en
  * el circuito. Cada vehículo deberá ser modelado teniendo en cuenta
@@ -36,6 +42,12 @@
      * que pasar por boxes y estar 2 simulaciones para rellenar el
      * depósito. El acceso a boxes se podrá realizar desde cualquier
      * sitio y momento.
+ *
+ * Un vehiculo debe implementar la lógica de avanzar de tramo y adelantar dependiendo del tramo y la posicion de los demas coches, esta informacion la contiene
+ * la instancia de la carrera, el tramo lo obtiene al ejecutar su lógica y consulta a la carrera la posición del vehiculo siguiente para comprobar si puede adelantarlo
+ * esta consulta se debe hacer de forma sincronizada para que no se produzcan adelantamientos inconsistentes
+ * (ej si 3 va a adelantar a 2 y 4 va a adelantar a 3 4 no pasa a ser 2 sino a ser 3) a no ser que adelante a dos,
+ * comprobar entonces todos los que hay delante? o limitar adelantamiento a un solo coche, comprobar cada coche delante hasta que no haya mas o no esté mas avanzado que este.
  */
 public class Vehicle implements Runnable,Comparable{
 
@@ -44,35 +56,155 @@ public class Vehicle implements Runnable,Comparable{
     private int fuelLevel;
     private int currentTrack;
     private int currentTrackDistance;
+    private float currentTrackRealDistance;
     private int lap;
+    private int adaptability;
+    private int fuelConsume;
     private Race race;
+    private RaceJudge judge;
     private int id;
+    private int position;
+    private int boxes;
+    private boolean started = false;
+    private boolean finished = false;
+    private boolean stopped = false;
+
 
     private static final int SECONDS_PER_ITERATION = 5;
     public Vehicle(Race race,int id){
-        this.speed = 5;
+        this.speed = new Random().nextInt(10)+5;
+        this.fuelConsume = new Random().nextInt(6)+2;
+        this.fuelLevel = new Random().nextInt(150)+50;
         this.distancePerSecond = 2;
         this.race = race;
-        this.currentTrack = 0;
+        this.currentTrack = 1;
         this.currentTrackDistance = 0;
-        this.lap = 0;
+        this.currentTrackRealDistance = 0;
+        this.lap = 1;
         this.id = id;
+        this.adaptability = new Random().nextInt(4)+1;
+
     }
 
     @Override
     public void run() {
 
-        //Comprobar si la distancia del tramo actual se ha recorrido
-        int trackLength = race.currentTrack(currentTrack).getLength();
-        if(currentTrackDistance<trackLength){
-            currentTrackDistance+=speed*SECONDS_PER_ITERATION;
+        if(!stopped) {
+            //If race is not started yet or finished so the thread blocks
+            if (!started) {
+                try {
+                    System.out.println(currentThread().getName() + " ->Vehiculo:" + this.id + "Esperando salida");
+                    RaceJudge.start.await();
+                    started = true;
+                    System.out.println(currentThread().getName() + " ->Vehiculo:" + this.id + "Salida");
+                } catch (InterruptedException e) {
+                    System.out.println("Vehicle:"+this.id+"Finalizando de forma inesperada");
+                }
+            }
+            int trackLength = 0;
+            try {
+                RaceTrack currentTrackObj = race.currentTrack(currentTrack - 1);
+
+                trackLength = currentTrackObj.computeDistance(this.adaptability);
+
+                //Actualizar el tramo
+                //System.out.println(currentThread().getName() + "vehicleId:" + this.id + "-> distancia antes de avanzar = " + currentTrackDistance);
+                currentTrackDistance += speed * SECONDS_PER_ITERATION;//Incluir tipo de tramo
+                //System.out.println(currentThread().getName() + " vehicleId:" + this.id + "-> tramo: " + currentTrack + " distancia: " + currentTrackDistance);
+
+
+                //La distancia del tramo actual se ha recorrido?
+                //avanza tantos tramos como sea necesario dependiendo de la distancia que haya recorrido
+                Main.updateAccess.readLock().lockInterruptibly();
+
+                while (currentTrackDistance >= trackLength) {
+
+                        sleep(10);
+
+                    //Incrementa la distancia restante con respecto al tramo anterior
+                    //Si la distancia del siguiente tramo es menor a la distancia recorrida esta iteración, debe incrementar tramos hasta que
+                    nextTrack(trackLength);
+                    trackLength = race.currentTrack(currentTrack - 1).computeDistance(this.adaptability);
+                    //System.out.println(currentThread().getName()+" vehicleId:"+this.id+" Distancia por recorrer="+currentTrackDistance);
+                    //System.out.println(currentThread().getName()+" vehicleId:"+this.id+" Distancia del tramo "+currentTrack+" ="+trackLength);
+
+                }
+            } catch (InterruptedException e) {
+                System.out.println("Vehicle:"+this.id+" parando de forma inesperada");
+                while (currentTrackDistance >= trackLength) {
+
+                    //Incrementa la distancia restante con respecto al tramo anterior
+                    //Si la distancia del siguiente tramo es menor a la distancia recorrida esta iteración, debe incrementar tramos hasta que
+                    nextTrack(trackLength);
+                    trackLength = race.currentTrack(currentTrack - 1).computeDistance(this.adaptability);
+                    //System.out.println(currentThread().getName()+" vehicleId:"+this.id+" Distancia por recorrer="+currentTrackDistance);
+                    //System.out.println(currentThread().getName()+" vehicleId:"+this.id+" Distancia del tramo "+currentTrack+" ="+trackLength);
+
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.out.println(e.getMessage());
+            }
+            Main.updateAccess.readLock().unlock();
+
         }
-        //Actualizar el tramo
-        if(currentTrackDistance>=trackLength){
-            System.out.println(Thread.currentThread().getName()+" vehicleId:"+this.id+": accedido al siguiente tramo: "+currentTrack++);
-            //Incrementa la distancia restante con respecto al tramo anterior
-            currentTrackDistance = currentTrackDistance-trackLength;
+
+        if(boxes>0){
+            System.out.println("vehicle: "+this.id+" -> En boxes "+(3-boxes));
+            boxes--;
+            stopped = boxes!=0;
+            if(!stopped){
+                fuelLevel = new Random().nextInt(50)+100;
+                System.out.println("vehicle: "+this.id+" -> saliendo de boxes, fuel= "+fuelLevel);
+
+            }
         }
+
+    }
+
+    private void nextTrack(int currentLength){
+
+        currentTrack++;
+        //Ha completado el ultimo tramo?
+        if (currentTrack-1 == race.tracks.size()) {
+            if(this.lap<Race.laps) {
+                lap++;
+                System.out.println(currentThread().getName() + " vehicleId:" + this.id + ": sigueinte vuelta lap:" + lap);
+                currentTrack = 1;
+            }else if(this.lap==Race.laps&&!finished){
+                this.finished = true;
+                System.out.println(currentThread().getName()+"Vehicle:"+id+"Vuelta final a boxes");
+                race.complete(this);
+                currentTrack = 1;
+            }else{
+                currentTrack = 5;
+                currentTrackDistance = currentLength;
+                currentTrackRealDistance = race.currentTrack(currentTrack-1).getLength();
+                System.out.println("Vehicle:"+this.id+" Track ->"+race.currentTrack(currentTrack-1).toString()+" Distance ->"+race.currentTrack(currentTrack-1).getLength());
+                System.out.println(currentThread().getName()+"Vehicle:"+id+"Fin de la carrera");
+                RaceJudge.lapsCompleted.countDown();
+                stopped = true;
+                //ToDo notificar al juez al terminar la vuelta a boxes para terminar la carrera y hacer el shutdown
+            }
+        }
+
+        //System.out.println(currentThread().getName()+" vehicleId:"+this.id+": accedido al siguiente tramo: "+ currentTrack +"/"+race.tracks.size());
+        //Distancia en el tramo actual es distancia recorrida menos la distancia del tramo anterior por avanzar k "metros"
+        currentTrackDistance = currentTrackDistance-currentLength;
+        currentTrackRealDistance = (float)(race.currentTrack(currentTrack-1).getLength()*currentTrackDistance)/race.currentTrack(currentTrack-1).computeDistance(this.adaptability);
+
+        if(!calculateFuel(currentLength)&&!finished){
+            System.out.println("vehicle: "+this.id+" -> Entrando a boxes");
+            currentTrackDistance=0;
+            currentTrackRealDistance=0;
+            stopped=true;
+            boxes=2;
+        }
+    }
+
+    private boolean calculateFuel(int trackLength){
+        fuelLevel = fuelLevel-(trackLength/fuelConsume);
+        return  fuelLevel> 0;
     }
 
 
@@ -80,21 +212,82 @@ public class Vehicle implements Runnable,Comparable{
     public int compareTo(Object o) {
         Vehicle vehicle = (Vehicle) o;
         if(this.lap<vehicle.lap){
-            return -1;
+            return 1;
         }else if(this.currentTrack<vehicle.currentTrack){
             if(this.lap>vehicle.lap){
-                return 1;
+                return -1;
             }else {
-                return -1;
-            }
-        }else if(this.currentTrackDistance<vehicle.currentTrackDistance){
-            if(this.lap==vehicle.lap&&this.currentTrack==vehicle.currentTrack){
-                return -1;
-            }else{
                 return 1;
+            }
+        }else if(this.currentTrackRealDistance<vehicle.currentTrackRealDistance){
+            if(this.lap==vehicle.lap&&this.currentTrack==vehicle.currentTrack){
+                return 1;
+            }else{
+                return -1;
             }
         }else{
-            return 0;
+            return -1;
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Vehicle vehicle = (Vehicle) o;
+        return id == vehicle.id;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
+
+    public int getCurrentTrack() {
+        return currentTrack;
+    }
+
+    public void setCurrentTrack(int currentTrack) {
+        this.currentTrack = currentTrack;
+    }
+
+    public float getCurrentTrackRealDistance() {
+        return currentTrackRealDistance;
+    }
+
+    public void setCurrentTrackRealDistance(float currentTrackRealDistance) {
+        this.currentTrackRealDistance = currentTrackRealDistance;
+    }
+
+    public int getCurrentTrackDistance() {
+        return currentTrackDistance;
+    }
+
+    public void setCurrentTrackDistance(int currentTrackDistance) {
+        this.currentTrackDistance = currentTrackDistance;
+    }
+
+    public int getLap() {
+        return lap;
+    }
+
+    public void setLap(int lap) {
+        this.lap = lap;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public int getPosition() {
+        return position;
+    }
+
+    public void setPosition(int position) {
+        this.position = position;
     }
 }
